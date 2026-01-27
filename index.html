@@ -1,13 +1,33 @@
-// 저장 함수 수정 부분
-function saveToSheet() {
-  const url = "https://script.google.com/macros/s/AKfycbyRn4Ay2nVXWapUUXMYv5rqv0d81-gEcHlHZPYRhVOcfxsdlmgECOIMSRTjXUlv2vJ5RA/exec";
-  const data = { /* 기존 데이터 수집 로직 */ };
 
-  fetch(url, {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }).then(res => {
-    alert("기록 완료!");
-    // 버튼 상태 복구 등
-  });
+function loadHistory() {
+  const date = document.getElementById('search-date').value;
+  if(!date) return alert("날짜를 선택하세요.");
+  
+  const display = document.getElementById('history-display');
+  display.innerText = "불러오는 중...";
+  
+  // 구글 앱스 스크립트 배포 URL (이미지에 있는 주소와 동일해야 함)
+  const url = "https://script.google.com/macros/s/AKfycbyRn4Ay2nVXWapUUXMYv5rqv0d81-gEcHlHZPYRhVOcfxsdlmgECOIMSRTjXUlv2vJ5RA/exec";
+
+  // GET 방식으로 날짜 전달
+  fetch(`${url}?date=${date}`)
+    .then(res => res.json())
+    .then(records => {
+      display.innerHTML = "";
+      if(!records || records.length === 0) {
+        display.innerText = "해당 날짜의 기록이 없습니다.";
+        return;
+      }
+      
+      records.forEach(r => {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+        card.innerHTML = `<strong>[${r.type}]</strong> ${r.time}<br>${r.lapOrDist} | ${r.hr}bpm<br><small>평가: ${r.review}</small>`;
+        display.appendChild(card);
+      });
+    })
+    .catch(err => {
+      console.error(err);
+      display.innerText = "데이터를 불러오는 데 실패했습니다.";
+    });
 }
