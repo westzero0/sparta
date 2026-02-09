@@ -91,15 +91,14 @@
 </div>
 
 <script>
+  // 1. D-Day 계산 함수
+  function getDDay() {
+    const target = new Date("2026-04-11"); // 원정 시작 예정일
+    const today = new Date();
+    const diff = target - today;
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  } // <--- 여기가 빠져있어서 작동이 안 됐던 것입니다!
 
-  // 1. D-Day 계산 함수 (script 태그 상단에 추가)
-function getDDay() {
-  const target = new Date("2026-04-11"); // 원정 시작 예정일
-  const today = new Date();
-  const diff = target - today;
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-
-  
   const API_URL = "https://script.google.com/macros/s/AKfycbyRn4Ay2nVXWapUUXMYv5rqv0d81-gEcHlHZPYRhVOcfxsdlmgECOIMSRTjXUlv2vJ5RA/exec";
   let startTime, timerInterval, elapsedTime = 0;
 
@@ -139,11 +138,12 @@ function getDDay() {
   async function saveMorning() {
     const star = document.querySelector('input[name="star"]:checked').value;
     const text = document.getElementById('condition-text').innerText;
-    const today = new Date().toISOString().split('T')[0]; // 변수 정의 추가
+    const today = new Date().toISOString().split('T')[0];
     const btn = document.getElementById('btn-morning');
     btn.disabled = true;
     try {
-      await fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ type: "아침컨디션", condition: star + "점 (" + text + ")" })});
+      // 'condition' 대신 'memo'로 전송하여 조회 시 내용이 나오도록 수정함
+      await fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ type: "아침컨디션", memo: star + "점 (" + text + ")" })});
       localStorage.setItem('lastConditionCheck', today);
       document.getElementById('morning-box').style.display = 'none';
       alert("오늘 컨디션 저장 완료!");
@@ -167,85 +167,80 @@ function getDDay() {
     } catch (e) { alert("저장 실패"); } finally { btn.disabled = false; }
   }
 
-// 2. 수정된 loadHistory 함수
-async function loadHistory() {
-  const date = document.getElementById('search-date').value;
-  if(!date) return alert("날짜를 선택하세요.");
-  const morningDisplay = document.getElementById('morning-status-display');
-  const historyDisplay = document.getElementById('history-display');
-  
-  const dday = getDDay();
-  morningDisplay.innerHTML = "";
-  historyDisplay.innerText = "데이터 분석 중...";
-
-  try {
-    const resp = await fetch(`${API_URL}?date=${date}`);
-    const records = await resp.json();
-    historyDisplay.innerHTML = "";
-
-    if(records.length === 0) {
-      historyDisplay.innerText = "기록이 없습니다.";
-      return;
-    }
-
-    // 데이터 그룹화
-    const grouped = records.reduce((acc, curr) => {
-      if (curr.type === "아침컨디션") {
-        morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${curr.review || curr.memo || "기록 없음"}</div>`;
-      } else {
-        if (!acc[curr.type]) acc[curr.type] = [];
-        acc[curr.type].push(curr);
-      }
-      return acc;
-    }, {});
-
-    // --- AI 훈련 평가 및 목표치 섹션 ---
-    let aiFeedback = `<div style="padding:10px; background:#fff9db; border-radius:10px; border:1px solid #f1c40f; margin-bottom:15px; font-size:0.85rem;">`;
-    aiFeedback += `<strong>🤖 SAT PEAK 원정 AI 코칭 (D-${dday})</strong><br><hr style="border:0; border-top:1px solid #e5c100; margin:5px 0;">`;
-
-    if (grouped["계단"]) {
-      const stairData = grouped["계단"];
-      const maxHr = Math.max(...stairData.map(r => parseInt(r.hr) || 0));
-      const avgWeight = stairData[0].weight;
-      
-      // 심박수 기반 평가 (기준: 어제 기록 168bpm)
-      if (maxHr >= 165) {
-        aiFeedback += `🚩 **강도 분석:** 심박수 ${maxHr}bpm은 고강도 구간입니다. 1월 28일 미간 부상 부위의 혈압 관리에 유의하세요.<br>`;
-      } else if (maxHr > 0) {
-        aiFeedback += `✅ **강도 분석:** 심박수가 안정적입니다. 심폐 효율이 좋아지고 있습니다.<br>`;
-      }
-
-      // 중량 기반 평가 (기준: 12kg 로프 배낭)
-      if (parseInt(avgWeight) >= 12) {
-        aiFeedback += `🎒 **하중 적응:** 12kg 적응력이 우수합니다. 원정 전까지 점진적으로 15kg까지 늘리는 것을 추천합니다.<br>`;
-      }
-      
-      aiFeedback += `📈 **원정 준비도:** 현재 페이스 유지 시 SAT PEAK 등정 확률 **85%** 예상`;
-    } else {
-      aiFeedback += `📍 오늘은 기술 훈련 또는 휴식일입니다. 내일은 심폐 훈련(계단/하이킹)을 권장합니다.`;
-    }
-    aiFeedback += `</div>`;
+  async function loadHistory() {
+    const date = document.getElementById('search-date').value;
+    if(!date) return alert("날짜를 선택하세요.");
+    const morningDisplay = document.getElementById('morning-status-display');
+    const historyDisplay = document.getElementById('history-display');
     
-    historyDisplay.innerHTML = aiFeedback;
+    const dday = getDDay();
+    morningDisplay.innerHTML = "";
+    historyDisplay.innerText = "데이터 분석 중...";
 
-    // 종목별 카드 출력 로직 (기존 유지)
-    for (const type in grouped) {
-      const card = document.createElement('div');
-      card.className = 'history-card';
-      let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
-      grouped[type].forEach((r, idx) => {
-        detailHtml += `<div style="margin-bottom:8px; padding-bottom:5px; ${idx < grouped[type].length - 1 ? 'border-bottom:1px dashed #eee;' : ''}">
-          <span style="color:#3498db; font-weight:bold;">${r.lapOrDist}회/차:</span> ${r.time} | 💓${r.hr}bpm | 🎒${r.weight}kg
-          ${r.memo ? `<br><small style="color:#888;">ㄴ ${r.memo}</small>` : ''}
-        </div>`;
-      });
-      card.innerHTML = detailHtml;
-      historyDisplay.appendChild(card);
+    try {
+      const resp = await fetch(`${API_URL}?date=${date}`);
+      const records = await resp.json();
+      historyDisplay.innerHTML = "";
+
+      if(records.length === 0) {
+        historyDisplay.innerText = "기록이 없습니다.";
+        return;
+      }
+
+      // 데이터 그룹화
+      const grouped = records.reduce((acc, curr) => {
+        if (curr.type === "아침컨디션") {
+          // 저장할 때 'memo'로 저장했으므로 불러올 때도 memo를 확인
+          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${curr.review || curr.memo || "기록 없음"}</div>`;
+        } else {
+          if (!acc[curr.type]) acc[curr.type] = [];
+          acc[curr.type].push(curr);
+        }
+        return acc;
+      }, {});
+
+      // --- AI 훈련 평가 섹션 ---
+      let aiFeedback = `<div style="padding:10px; background:#fff9db; border-radius:10px; border:1px solid #f1c40f; margin-bottom:15px; font-size:0.85rem;">`;
+      aiFeedback += `<strong>🤖 SAT PEAK 원정 AI 코칭 (D-${dday})</strong><br><hr style="border:0; border-top:1px solid #e5c100; margin:5px 0;">`;
+
+      if (grouped["계단"]) {
+        const stairData = grouped["계단"];
+        const maxHr = Math.max(...stairData.map(r => parseInt(r.hr) || 0));
+        const avgWeight = stairData[0].weight;
+        
+        if (maxHr >= 165) {
+          aiFeedback += `🚩 **강도 분석:** 심박수 ${maxHr}bpm은 고강도 구간입니다. 1월 28일 미간 부상 부위 혈압 관리에 유의하세요.<br>`;
+        } else if (maxHr > 0) {
+          aiFeedback += `✅ **강도 분석:** 심박수가 안정적입니다. 심폐 효율이 좋아지고 있습니다.<br>`;
+        }
+        if (parseInt(avgWeight) >= 12) {
+          aiFeedback += `🎒 **하중 적응:** 12kg 적응력이 우수합니다. 점진적 증량을 고려하세요.<br>`;
+        }
+        aiFeedback += `📈 **원정 준비도:** 현재 페이스 유지 시 SAT PEAK 등정 확률 **85%** 예상`;
+      } else {
+        aiFeedback += `📍 오늘은 기술 훈련 또는 휴식일입니다. 내일은 심폐 훈련(계단/하이킹)을 권장합니다.`;
+      }
+      aiFeedback += `</div>`;
+      historyDisplay.innerHTML = aiFeedback;
+
+      // 종목별 카드 출력
+      for (const type in grouped) {
+        const card = document.createElement('div');
+        card.className = 'history-card';
+        let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
+        grouped[type].forEach((r, idx) => {
+          detailHtml += `<div style="margin-bottom:8px; padding-bottom:5px; ${idx < grouped[type].length - 1 ? 'border-bottom:1px dashed #eee;' : ''}">
+            <span style="color:#3498db; font-weight:bold;">${r.lapOrDist}회/차:</span> ${r.time} | 💓${r.hr}bpm | 🎒${r.weight}kg
+            ${r.memo ? `<br><small style="color:#888;">ㄴ ${r.memo}</small>` : ''}
+          </div>`;
+        });
+        card.innerHTML = detailHtml;
+        historyDisplay.appendChild(card);
+      }
+    } catch (e) {
+      historyDisplay.innerText = "조회 실패: " + e.message;
     }
-  } catch (e) {
-    historyDisplay.innerText = "조회 실패: " + e.message;
   }
-}
 
   function startTimer() { if (!timerInterval) { startTime = Date.now() - elapsedTime; timerInterval = setInterval(updateTime, 100); } }
   function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
@@ -253,5 +248,3 @@ async function loadHistory() {
 </script>
 </body>
 </html>
-
-
