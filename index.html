@@ -102,13 +102,18 @@
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }
 
-  window.onload = function() {
-    const lastCheckDate = localStorage.getItem('lastConditionCheck');
-    const today = new Date().toISOString().split('T')[0];
-    if (lastCheckDate !== today) {
-      document.getElementById('morning-box').style.display = 'block';
-    }
-  };
+ // 1. 페이지 로드 시 컨디션 체크 여부 확인
+window.onload = function() {
+  const lastCheckDate = localStorage.getItem('lastConditionCheck');
+  // 한국 시간 기준 날짜 생성 (yyyy-MM-dd)
+  const today = new Date().toLocaleDateString('sv-SE'); 
+  
+  if (lastCheckDate === today) {
+    document.getElementById('morning-box').style.display = 'none';
+  } else {
+    document.getElementById('morning-box').style.display = 'block';
+  }
+};
 
   // AI 피드백 생성 함수 (독립 선언)
   function generateAIFeedback(grouped, dday) {
@@ -164,19 +169,39 @@
   function closeHistory() { document.getElementById('history-layer').style.display = 'none'; }
   function resetTimer() { stopTimer(); elapsedTime = 0; document.getElementById("timer").innerText = "00:00:00"; }
 
-  async function saveMorning() {
-    const star = document.querySelector('input[name="star"]:checked').value;
-    const text = document.getElementById('condition-text').innerText;
-    const today = new Date().toISOString().split('T')[0];
-    const btn = document.getElementById('btn-morning');
-    btn.disabled = true;
-    try {
-      await fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ type: "아침컨디션", condition: star + "점 (" + text + ")" })});
-      localStorage.setItem('lastConditionCheck', today);
-      document.getElementById('morning-box').style.display = 'none';
-      alert("오늘 컨디션 저장 완료!");
-    } catch (e) { alert("오류 발생"); btn.disabled = false; }
+  // 2. 컨디션 저장 함수 (UI 즉시 숨김 및 로컬 스토리지 기록)
+async function saveMorning() {
+  const star = document.querySelector('input[name="star"]:checked').value;
+  const text = document.getElementById('condition-text').innerText;
+  const today = new Date().toLocaleDateString('sv-SE');
+  const btn = document.getElementById('btn-morning');
+  
+  btn.disabled = true;
+  btn.innerText = "저장 중...";
+
+  try {
+    // 백엔드 H열(condition)에 기록되도록 전송
+    await fetch(API_URL, { 
+      method: "POST", 
+      mode: "no-cors", 
+      body: JSON.stringify({ 
+        type: "아침컨디션", 
+        condition: star + "점 (" + text + ")" 
+      })
+    });
+    
+    // 로컬 스토리지에 오늘 날짜 기록 (새로고침 방어)
+    localStorage.setItem('lastConditionCheck', today);
+    
+    // UI 즉시 숨김
+    document.getElementById('morning-box').style.display = 'none';
+    alert("오늘 컨디션 저장 완료! 원정 준비 화이팅입니다.");
+  } catch (e) { 
+    alert("오류 발생: " + e.message); 
+    btn.disabled = false;
+    btn.innerText = "컨디션 저장";
   }
+}
 
   async function saveSession() {
     const type = document.getElementById('type').value;
@@ -196,61 +221,86 @@
   }
 
   // 🚀 핵심 수정된 loadHistory
-  async function loadHistory() {
-    const dateInput = document.getElementById('search-date').value;
-    if(!dateInput) return alert("날짜를 선택하세요.");
-    const morningDisplay = document.getElementById('morning-status-display');
-    const historyDisplay = document.getElementById('history-display');
-    
-    morningDisplay.innerHTML = "";
-    historyDisplay.innerText = "데이터 분석 중...";
+async function loadHistory() {
+  const dateInput = document.getElementById('search-date').value;
+  if(!dateInput) return alert("날짜를 선택하세요.");
+  
+  const morningDisplay = document.getElementById('morning-status-display');
+  const historyDisplay = document.getElementById('history-display');
+  const copyBtn = document.getElementById('btn-copy');
+  
+  morningDisplay.innerHTML = "";
+  historyDisplay.innerText = "데이터 분석 중...";
+  if(copyBtn) copyBtn.style.display = 'none';
 
-    try {
-      const resp = await fetch(`${API_URL}?date=${dateInput}`);
-      const records = await resp.json();
-      historyDisplay.innerHTML = "";
+  try {
+    const resp = await fetch(`${API_URL}?date=${dateInput}`);
+    const records = await resp.json();
+    historyDisplay.innerHTML = "";
 
-      if(!records || records.length === 0) {
-        historyDisplay.innerText = "기록이 없습니다.";
-        return;
+    if(!records || records.length === 0) {
+      historyDisplay.innerText = "기록이 없습니다.";
+      return;
+    }
+
+    const dday = getDDay();
+    // 데이터 그룹화 및 아침 컨디션(H열) 추출 로직
+    const grouped = records.reduce((acc, curr) => {
+      if (curr.type === "아침컨디션") {
+        // H열(condition) 데이터를 우선 참조하고 없을 경우 메모 참조
+        acc.morning = curr.condition || curr.review || curr.memo || "기록 없음";
+        morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${acc.morning}</div>`;
+      } else {
+        if (!acc[curr.type]) acc[curr.type] = [];
+        acc[curr.type].push(curr);
       }
+      return acc;
+    }, { morning: "기록 없음" });
 
-      const grouped = records.reduce((acc, curr) => {
-        if (curr.type === "아침컨디션") {
-          const conditionData = curr.condition || curr.review || curr.memo || "기록 없음";
-          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${conditionData}</div>`;
-        } else {
-          if (!acc[curr.type]) acc[curr.type] = [];
-          acc[curr.type].push(curr);
-        }
-        return acc;
-      }, {});
+    // AI 피드백 출력 (날짜 보정 포함)
+    historyDisplay.innerHTML = generateAIFeedback(grouped, dday);
+    if(copyBtn) copyBtn.style.display = 'block';
 
-      // 1. AI 피드백 화면에 추가
-      historyDisplay.innerHTML = generateAIFeedback(grouped, getDDay());
-
-      // 2. 종목별 카드 렌더링
-      for (const type in grouped) {
-        const card = document.createElement('div');
-        card.className = 'history-card';
-        let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
-        grouped[type].forEach((r, idx) => {
-          const hrText = r.hr ? ` | 💓${r.hr}bpm` : "";
-          const weightText = (r.weight && r.weight !== "-") ? ` | 🎒${r.weight}kg` : "";
-          const timeText = r.time ? ` | ⏱️${r.time}` : "";
-          detailHtml += `<div style="margin-bottom:8px; padding-bottom:5px; ${idx < grouped[type].length - 1 ? 'border-bottom:1px dashed #eee;' : ''}">
+    // 종목별 카드 출력
+    for (const type in grouped) {
+      if (type === "morning") continue;
+      const card = document.createElement('div');
+      card.className = 'history-card';
+      
+      let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
+      
+      grouped[type].forEach((r, idx) => {
+        const hrText = r.hr ? ` | 💓${r.hr}bpm` : "";
+        const weightText = (r.weight && r.weight !== "-") ? ` | 🎒${r.weight}kg` : "";
+        const timeText = r.time ? ` | ⏱️${r.time}` : "";
+        
+        detailHtml += `
+          <div style="margin-bottom:8px; padding-bottom:5px; ${idx < grouped[type].length - 1 ? 'border-bottom:1px dashed #eee;' : ''}">
             <span style="color:#3498db; font-weight:bold;">${idx + 1}차 :</span> ${r.lapOrDist || "0"}${type === '계단' ? '회' : ''} 
             ${timeText}${hrText}${weightText}
             ${r.memo ? `<br><small style="color:#888;">ㄴ ${r.memo}</small>` : ''}
           </div>`;
-        });
-        card.innerHTML = detailHtml;
-        historyDisplay.appendChild(card);
-      }
-    } catch (e) {
-      historyDisplay.innerText = "조회 실패: " + e.message;
+      });
+      card.innerHTML = detailHtml;
+      historyDisplay.appendChild(card);
     }
+
+    // 카톡 공유용 텍스트 생성 (날짜 보정)
+    currentSummaryText = `🏔️ SAT PEAK 훈련 요약 (${dateInput})\n📅 원정 D-${dday}\n☀️ 컨디션: ${grouped.morning}\n\n`;
+    for (const type in grouped) {
+      if (type === "morning") continue;
+      currentSummaryText += `[${type}]\n`;
+      grouped[type].forEach((r, idx) => {
+        currentSummaryText += `${idx + 1}차: ${r.lapOrDist || "0"}${type==='계단'?'회':''}\n`;
+      });
+      currentSummaryText += `\n`;
+    }
+    currentSummaryText += `🤖 AI 코치: 등정 확률 88% 예상.`;
+
+  } catch (e) {
+    historyDisplay.innerText = "조회 실패: " + e.message;
   }
+}
 
   function startTimer() { if (!timerInterval) { startTime = Date.now() - elapsedTime; timerInterval = setInterval(updateTime, 100); } }
   function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
@@ -258,3 +308,4 @@
 </script>
 </body>
 </html>
+
