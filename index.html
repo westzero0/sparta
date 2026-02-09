@@ -31,9 +31,11 @@
     input, select, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
     .label { text-align: left; font-size: 0.8rem; color: #666; font-weight: bold; margin-top: 5px; }
 
-    /* 조회 레이어 */
-    #history-layer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 100; overflow-y: auto; padding: 15px 15px 100px 15px; box-sizing: border-box; }
-    .history-card { background: #f9f9f9; padding: 10px; border-radius: 8px; margin-bottom: 8px; text-align: left; border-left: 4px solid #3498db; font-size: 0.85rem; line-height: 1.4; }
+   /* 조회 레이어 및 특수 카드 */
+    #history-layer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #f4f7f6; z-index: 100; overflow-y: auto; padding: 15px 15px 100px 15px; box-sizing: border-box; }
+    .morning-status-card { background: #e8f4fd; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #3498db; text-align: center; }
+    .history-card { background: white; padding: 12px; border-radius: 10px; margin-bottom: 8px; text-align: left; border-left: 5px solid #3498db; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    
   </style>
 </head>
 <body>
@@ -198,32 +200,36 @@
     } catch (e) { alert("저장 중 오류 발생"); } finally { btn.disabled = false; }
   }
 
-  async function loadHistory() {
+ async function loadHistory() {
     const date = document.getElementById('search-date').value;
     if(!date) return alert("날짜를 선택하세요.");
-    const display = document.getElementById('history-display');
-    display.innerText = "조회 중...";
-
+    const morningDisplay = document.getElementById('morning-status-display');
+    const historyDisplay = document.getElementById('history-display');
+    morningDisplay.innerHTML = ""; historyDisplay.innerText = "조회 중...";
     try {
       const resp = await fetch(`${API_URL}?date=${date}`);
       const records = await resp.json();
-      display.innerHTML = records.length ? "" : "기록이 없습니다.";
+      historyDisplay.innerHTML = "";
+      if(records.length === 0) { historyDisplay.innerText = "기록이 없습니다."; return; }
+      
       records.forEach(r => {
-        const div = document.createElement('div');
-        div.className = 'history-card';
-        div.innerHTML = `<strong>[${r.type}]</strong> ${r.time || ""}<br>${r.lapOrDist || ""} | ${r.hr || ""}bpm | ${r.weight || ""}kg<br><small>${r.review || r.memo || ""}</small>`;
-        display.appendChild(div);
+        if(r.type === "아침컨디션") {
+          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${r.review || r.memo || "상태 기록 없음"}</div>`;
+        } else {
+          const div = document.createElement('div');
+          div.className = 'history-card';
+          div.innerHTML = `<strong>[${r.type}]</strong> ${r.time || ""}<br>${r.lapOrDist || ""} | ${r.hr || ""}bpm | ${r.weight || ""}kg<br><small>${r.review || r.memo || ""}</small>`;
+          historyDisplay.appendChild(div);
+        }
       });
-    } catch (e) { display.innerText = "조회 실패"; }
+      if(historyDisplay.innerHTML === "" && morningDisplay.innerHTML !== "") historyDisplay.innerText = "훈련 기록은 없습니다.";
+    } catch (e) { historyDisplay.innerText = "조회 실패"; }
   }
 
   function startTimer() { if (!timerInterval) { startTime = Date.now() - elapsedTime; timerInterval = setInterval(updateTime, 100); } }
   function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
-  function updateTime() {
-    elapsedTime = Date.now() - startTime;
-    let s = Math.floor(elapsedTime / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
-    document.getElementById("timer").innerText = (h>0?h+":":"")+(m%60<10?"0"+m%60:m%60)+":"+(s%60<10?"0"+s%60:s%60);
-  }
+  function updateTime() { elapsedTime = Date.now() - startTime; let s = Math.floor(elapsedTime / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60); document.getElementById("timer").innerText = (h>0?h+":":"")+(m%60<10?"0"+m%60:m%60)+":"+(s%60<10?"0"+s%60:s%60); }
 </script>
 </body>
 </html>
+
