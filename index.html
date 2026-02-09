@@ -4,7 +4,6 @@
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <style>
-    /* 기존 스타일 유지 */
     html, body { height: 100%; margin: 0; padding: 0; background: #f4f7f6; }
     body { font-family: 'Apple SD Gothic Neo', sans-serif; display: flex; flex-direction: column; overflow: hidden; }
     .header { padding: 15px; background: white; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 1.1rem; text-align: center; flex-shrink: 0; }
@@ -85,16 +84,20 @@
     <button onclick="closeHistory()" style="width:60px; padding:8px; background:#ddd; border-radius: 8px; font-size:0.8rem;">닫기</button>
   </div>
   <input type="date" id="search-date">
-  <button id="btn-load" class="btn-purple" onclick="loadHistory()">기록 불러오기</button>
+  <div style="display: flex; gap: 5px;">
+    <button id="btn-load" class="btn-purple" style="flex:1;" onclick="loadHistory()">기록 불러오기</button>
+    <button id="btn-copy" class="btn-green" style="flex:1; display:none;" onclick="copyToClipboard()">카톡 공유 복사</button>
+  </div>
   <div id="morning-status-display" style="margin-top:15px;"></div>
   <div id="history-display"></div>
 </div>
 
 <script>
-  // 전역 변수 설정
   const API_URL = "https://script.google.com/macros/s/AKfycbynBT6T98e5dUDCRyQ1UBAO9LozhxklCoqSKufC6ig0wDRLwdnHTVY6gxBlOYwBxnV-qA/exec";
   let startTime, timerInterval, elapsedTime = 0;
+  let currentSummaryText = "";
 
+  // D-Day 계산
   function getDDay() {
     const target = new Date("2026-04-11");
     const today = new Date();
@@ -102,48 +105,19 @@
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }
 
- // 1. 페이지 로드 시 컨디션 체크 여부 확인
-window.onload = function() {
-  const lastCheckDate = localStorage.getItem('lastConditionCheck');
-  // 한국 시간 기준 날짜 생성 (yyyy-MM-dd)
-  const today = new Date().toLocaleDateString('sv-SE'); 
-  
-  if (lastCheckDate === today) {
-    document.getElementById('morning-box').style.display = 'none';
-  } else {
-    document.getElementById('morning-box').style.display = 'block';
-  }
-};
-
-  // AI 피드백 생성 함수 (독립 선언)
-  function generateAIFeedback(grouped, dday) {
-    let feedback = `<div style="padding:12px; background:#fff9db; border-radius:10px; border:1px solid #f1c40f; margin-bottom:15px; font-size:0.85rem; line-height:1.5;">`;
-    feedback += `<strong>🤖 SAT PEAK 원정 AI 리포트 (D-${dday})</strong><br><hr style="border:0; border-top:1px solid #e5c100; margin:8px 0;">`;
-
-    if (grouped["계단"] || grouped["중량하이킹"]) {
-      const stairData = grouped["계단"] || grouped["중량하이킹"];
-      const hrValues = stairData.map(r => parseInt(r.hr)).filter(v => v > 0);
-      const maxHr = hrValues.length > 0 ? Math.max(...hrValues) : 0;
-      const weight = parseInt(stairData[0].weight) || 0;
-
-      if (maxHr >= 165) {
-        feedback += `🚩 **강도 알림:** 심박수(${maxHr}bpm)가 높습니다. 상처 부위 안정기인 만큼 Zone 3 유지에 집중하세요.<br>`;
-      } else {
-        feedback += `✅ **안정성:** 적절한 강도 배분입니다. 심폐 효율이 개선되고 있습니다.<br>`;
-      }
-
-      if (weight >= 12) {
-        feedback += `🎒 **하중:** 12kg 적응력이 좋습니다. 원정 배낭 무게를 고려해 1~2kg씩 점진적 증량을 추천합니다.<br>`;
-      }
-      feedback += `📈 **준비도:** 현재 페이스 유지 시 등정 성공 확률 **88%** 예상`;
+  // 페이지 로드 시 컨디션 체크 박스 표시 제어
+  document.addEventListener("DOMContentLoaded", function() {
+    const lastCheckDate = localStorage.getItem('lastConditionCheck');
+    const todayStr = new Date().toLocaleDateString('sv-SE').trim();
+    
+    if (lastCheckDate === todayStr) {
+      document.getElementById('morning-box').style.display = 'none';
     } else {
-      feedback += `📍 오늘은 원정 등반에 필요한 '턱걸이' 등 근력 강화 또는 기술 숙련에 집중한 날이군요.`;
+      document.getElementById('morning-box').style.display = 'block';
     }
-    feedback += `</div>`;
-    return feedback;
-  }
+  });
 
-  // 저장 및 타이머 관련 함수들은 기존과 동일 (생략 없이 포함됨)
+  // 컨디션 별 텍스트 변경
   document.querySelectorAll('.rating input').forEach(input => {
     input.addEventListener('change', (e) => {
       const texts = { "1": "매우 나쁨", "2": "피로함", "3": "보통", "4": "좋음", "5": "최상" };
@@ -151,6 +125,34 @@ window.onload = function() {
     });
   });
 
+  // 컨디션 저장
+  async function saveMorning() {
+    const star = document.querySelector('input[name="star"]:checked').value;
+    const text = document.getElementById('condition-text').innerText;
+    const todayStr = new Date().toLocaleDateString('sv-SE').trim();
+    const btn = document.getElementById('btn-morning');
+    
+    btn.disabled = true;
+    btn.innerText = "저장 중...";
+
+    try {
+      await fetch(API_URL, { 
+        method: "POST", 
+        mode: "no-cors", 
+        body: JSON.stringify({ type: "아침컨디션", condition: star + "점 (" + text + ")" })
+      });
+      
+      localStorage.setItem('lastConditionCheck', todayStr);
+      document.getElementById('morning-box').style.display = 'none';
+      alert("오늘 컨디션 저장 완료!");
+    } catch (e) { 
+      alert("오류 발생: " + e.message); 
+      btn.disabled = false;
+      btn.innerText = "컨디션 저장";
+    }
+  }
+
+  // 종목 선택 시 가이드 변경
   document.getElementById('type').addEventListener('change', function() {
     const type = this.value;
     const label = document.getElementById('dynamic-label');
@@ -165,44 +167,13 @@ window.onload = function() {
     else if (type === '등반') { label.innerText = "내용 / 최대심박 / 기온(℃)"; lapInput.type = "text"; paceInput.style.display = 'block'; }
   });
 
-  function openHistory() { document.getElementById('history-layer').style.display = 'block'; }
-  function closeHistory() { document.getElementById('history-layer').style.display = 'none'; }
+  // 타이머 관련
+  function startTimer() { if (!timerInterval) { startTime = Date.now() - elapsedTime; timerInterval = setInterval(updateTime, 100); } }
+  function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
+  function updateTime() { elapsedTime = Date.now() - startTime; let s = Math.floor(elapsedTime / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60); document.getElementById("timer").innerText = (h>0?h+":":"")+(m%60<10?"0"+m%60:m%60)+":"+(s%60<10?"0"+s%60:s%60); }
   function resetTimer() { stopTimer(); elapsedTime = 0; document.getElementById("timer").innerText = "00:00:00"; }
 
-  // 2. 컨디션 저장 함수 (UI 즉시 숨김 및 로컬 스토리지 기록)
-async function saveMorning() {
-  const star = document.querySelector('input[name="star"]:checked').value;
-  const text = document.getElementById('condition-text').innerText;
-  const today = new Date().toLocaleDateString('sv-SE');
-  const btn = document.getElementById('btn-morning');
-  
-  btn.disabled = true;
-  btn.innerText = "저장 중...";
-
-  try {
-    // 백엔드 H열(condition)에 기록되도록 전송
-    await fetch(API_URL, { 
-      method: "POST", 
-      mode: "no-cors", 
-      body: JSON.stringify({ 
-        type: "아침컨디션", 
-        condition: star + "점 (" + text + ")" 
-      })
-    });
-    
-    // 로컬 스토리지에 오늘 날짜 기록 (새로고침 방어)
-    localStorage.setItem('lastConditionCheck', today);
-    
-    // UI 즉시 숨김
-    document.getElementById('morning-box').style.display = 'none';
-    alert("오늘 컨디션 저장 완료! 원정 준비 화이팅입니다.");
-  } catch (e) { 
-    alert("오류 발생: " + e.message); 
-    btn.disabled = false;
-    btn.innerText = "컨디션 저장";
-  }
-}
-
+  // 세션 기록
   async function saveSession() {
     const type = document.getElementById('type').value;
     const lapInput = document.getElementById('lapOrDist');
@@ -220,93 +191,109 @@ async function saveMorning() {
     } catch (e) { alert("저장 실패"); } finally { btn.disabled = false; }
   }
 
-  // 🚀 핵심 수정된 loadHistory
-async function loadHistory() {
-  const dateInput = document.getElementById('search-date').value;
-  if(!dateInput) return alert("날짜를 선택하세요.");
-  
-  const morningDisplay = document.getElementById('morning-status-display');
-  const historyDisplay = document.getElementById('history-display');
-  const copyBtn = document.getElementById('btn-copy');
-  
-  morningDisplay.innerHTML = "";
-  historyDisplay.innerText = "데이터 분석 중...";
-  if(copyBtn) copyBtn.style.display = 'none';
+  // 과거 기록 레이어 제어
+  function openHistory() { document.getElementById('history-layer').style.display = 'block'; }
+  function closeHistory() { document.getElementById('history-layer').style.display = 'none'; }
 
-  try {
-    const resp = await fetch(`${API_URL}?date=${dateInput}`);
-    const records = await resp.json();
-    historyDisplay.innerHTML = "";
+  // 기록 불러오기 및 AI 피드백
+  async function loadHistory() {
+    const dateInput = document.getElementById('search-date').value;
+    if(!dateInput) return alert("날짜를 선택하세요.");
+    const morningDisplay = document.getElementById('morning-status-display');
+    const historyDisplay = document.getElementById('history-display');
+    const copyBtn = document.getElementById('btn-copy');
+    
+    morningDisplay.innerHTML = "";
+    historyDisplay.innerText = "데이터 로딩 중...";
+    copyBtn.style.display = 'none';
 
-    if(!records || records.length === 0) {
-      historyDisplay.innerText = "기록이 없습니다.";
-      return;
-    }
+    try {
+      const resp = await fetch(`${API_URL}?date=${dateInput}`);
+      const records = await resp.json();
+      historyDisplay.innerHTML = "";
 
-    const dday = getDDay();
-    // 데이터 그룹화 및 아침 컨디션(H열) 추출 로직
-    const grouped = records.reduce((acc, curr) => {
-      if (curr.type === "아침컨디션") {
-        // H열(condition) 데이터를 우선 참조하고 없을 경우 메모 참조
-        acc.morning = curr.condition || curr.review || curr.memo || "기록 없음";
-        morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${acc.morning}</div>`;
-      } else {
-        if (!acc[curr.type]) acc[curr.type] = [];
-        acc[curr.type].push(curr);
+      if(!records || records.length === 0) {
+        historyDisplay.innerText = "기록이 없습니다.";
+        return;
       }
-      return acc;
-    }, { morning: "기록 없음" });
 
-    // AI 피드백 출력 (날짜 보정 포함)
-    historyDisplay.innerHTML = generateAIFeedback(grouped, dday);
-    if(copyBtn) copyBtn.style.display = 'block';
+      const dday = getDDay();
+      const grouped = records.reduce((acc, curr) => {
+        if (curr.type === "아침컨디션") {
+          acc.morning = curr.condition || curr.review || curr.memo || "기록 없음";
+          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${acc.morning}</div>`;
+        } else {
+          if (!acc[curr.type]) acc[curr.type] = [];
+          acc[curr.type].push(curr);
+        }
+        return acc;
+      }, { morning: "기록 없음" });
 
-    // 종목별 카드 출력
-    for (const type in grouped) {
-      if (type === "morning") continue;
-      const card = document.createElement('div');
-      card.className = 'history-card';
-      
-      let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
-      
-      grouped[type].forEach((r, idx) => {
-        const hrText = r.hr ? ` | 💓${r.hr}bpm` : "";
-        const weightText = (r.weight && r.weight !== "-") ? ` | 🎒${r.weight}kg` : "";
-        const timeText = r.time ? ` | ⏱️${r.time}` : "";
-        
-        detailHtml += `
-          <div style="margin-bottom:8px; padding-bottom:5px; ${idx < grouped[type].length - 1 ? 'border-bottom:1px dashed #eee;' : ''}">
-            <span style="color:#3498db; font-weight:bold;">${idx + 1}차 :</span> ${r.lapOrDist || "0"}${type === '계단' ? '회' : ''} 
-            ${timeText}${hrText}${weightText}
-            ${r.memo ? `<br><small style="color:#888;">ㄴ ${r.memo}</small>` : ''}
+      // AI 피드백 생성 (내부 함수 선언)
+      function generateAIFeedback(grouped, dday) {
+        let feedback = `<div style="padding:12px; background:#fff9db; border-radius:10px; border:1px solid #f1c40f; margin-bottom:15px; font-size:0.85rem; line-height:1.5;">`;
+        feedback += `<strong>🤖 SAT PEAK 원정 AI 리포트 (D-${dday})</strong><br><hr style="border:0; border-top:1px solid #e5c100; margin:8px 0;">`;
+        if (grouped["계단"] || grouped["중량하이킹"]) {
+          const mainTraining = grouped["계단"] || grouped["중량하이킹"];
+          const hrValues = mainTraining.map(r => parseInt(r.hr)).filter(v => v > 0);
+          const maxHr = hrValues.length > 0 ? Math.max(...hrValues) : 0;
+          const weight = parseInt(mainTraining[0].weight) || 0;
+          if (maxHr >= 165) feedback += `🚩 **강도 알림:** 심박수(${maxHr}bpm)가 높습니다. 무리하지 않도록 주의하세요.<br>`;
+          else feedback += `✅ **안정성:** 적절한 강도입니다. 심폐 효율이 좋아지고 있습니다.<br>`;
+          if (weight >= 12) feedback += `🎒 **하중:** 12kg 적응력이 좋습니다. 원정 배낭 무게에 대비해 점진적으로 증량하세요.<br>`;
+          feedback += `📈 **준비도:** 현재 페이스 유지 시 등정 성공 확률 **88%** 예상`;
+        } else {
+          feedback += `📍 오늘은 원정 등반에 필요한 기초 체력이나 기술 숙련에 집중한 날이군요.`;
+        }
+        feedback += `</div>`;
+        return feedback;
+      }
+
+      historyDisplay.innerHTML = generateAIFeedback(grouped, dday);
+      copyBtn.style.display = 'block';
+
+      // 종목별 리스트 렌더링
+      for (const type in grouped) {
+        if (type === "morning") continue;
+        const card = document.createElement('div');
+        card.className = 'history-card';
+        let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
+        grouped[type].forEach((r, idx) => {
+          const hrText = r.hr ? ` | 💓${r.hr}bpm` : "";
+          const weightText = (r.weight && r.weight !== "-") ? ` | 🎒${r.weight}kg` : "";
+          const timeText = r.time ? ` | ⏱️${r.time}` : "";
+          detailHtml += `<div style="margin-bottom:8px; padding-bottom:5px; border-bottom:1px dashed #eee;">
+            <span style="color:#3498db; font-weight:bold;">${idx + 1}차 :</span> ${r.lapOrDist || "0"}${type === '계단' ? '회' : ''}${timeText}${hrText}${weightText}
           </div>`;
-      });
-      card.innerHTML = detailHtml;
-      historyDisplay.appendChild(card);
-    }
+        });
+        card.innerHTML = detailHtml;
+        historyDisplay.appendChild(card);
+      }
 
-    // 카톡 공유용 텍스트 생성 (날짜 보정)
-    currentSummaryText = `🏔️ SAT PEAK 훈련 요약 (${dateInput})\n📅 원정 D-${dday}\n☀️ 컨디션: ${grouped.morning}\n\n`;
-    for (const type in grouped) {
-      if (type === "morning") continue;
-      currentSummaryText += `[${type}]\n`;
-      grouped[type].forEach((r, idx) => {
-        currentSummaryText += `${idx + 1}차: ${r.lapOrDist || "0"}${type==='계단'?'회':''}\n`;
-      });
-      currentSummaryText += `\n`;
-    }
-    currentSummaryText += `🤖 AI 코치: 등정 확률 88% 예상.`;
+      // 카톡 공유용 텍스트 생성
+      currentSummaryText = `🏔️ SAT PEAK 훈련 요약 (${dateInput})\n📅 원정 D-${dday}\n☀️ 컨디션: ${grouped.morning}\n\n`;
+      for (const type in grouped) {
+        if (type === "morning") continue;
+        currentSummaryText += `[${type}]\n`;
+        grouped[type].forEach((r, idx) => {
+          currentSummaryText += `${idx + 1}차: ${r.lapOrDist || "0"}${type==='계단'?'회':''}\n`;
+        });
+        currentSummaryText += `\n`;
+      }
+      currentSummaryText += `🤖 AI 코치: 현재 페이스 유지 시 등정 확률 88% 예상.`;
 
-  } catch (e) {
-    historyDisplay.innerText = "조회 실패: " + e.message;
+    } catch (e) {
+      historyDisplay.innerText = "조회 실패: " + e.message;
+    }
   }
-}
 
-  function startTimer() { if (!timerInterval) { startTime = Date.now() - elapsedTime; timerInterval = setInterval(updateTime, 100); } }
-  function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
-  function updateTime() { elapsedTime = Date.now() - startTime; let s = Math.floor(elapsedTime / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60); document.getElementById("timer").innerText = (h>0?h+":":"")+(m%60<10?"0"+m%60:m%60)+":"+(s%60<10?"0"+s%60:s%60); }
+  // 복사 기능
+  function copyToClipboard() {
+    if (!currentSummaryText) return;
+    navigator.clipboard.writeText(currentSummaryText).then(() => {
+      alert("훈련 요약이 클립보드에 복사되었습니다!");
+    }).catch(err => alert("복사 실패: " + err));
+  }
 </script>
 </body>
 </html>
-
-
