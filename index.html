@@ -158,29 +158,63 @@
     } catch (e) { alert("저장 실패"); } finally { btn.disabled = false; }
   }
 
-  async function loadHistory() {
-    const date = document.getElementById('search-date').value;
-    if(!date) return alert("날짜를 선택하세요.");
-    const morningDisplay = document.getElementById('morning-status-display');
-    const historyDisplay = document.getElementById('history-display');
-    morningDisplay.innerHTML = ""; historyDisplay.innerText = "조회 중...";
-    try {
-      const resp = await fetch(`${API_URL}?date=${date}`);
-      const records = await resp.json();
-      historyDisplay.innerHTML = "";
-      if(records.length === 0) { historyDisplay.innerText = "기록이 없습니다."; return; }
-      records.forEach(r => {
-        if(r.type === "아침컨디션") {
-          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${r.review || r.memo || "기록 없음"}</div>`;
-        } else {
-          const div = document.createElement('div');
-          div.className = 'history-card';
-          div.innerHTML = `<strong>[${r.type}]</strong> ${r.time || ""}<br>${r.lapOrDist || ""} | ${r.hr || ""}bpm | ${r.weight || ""}kg<br><small>${r.review || r.memo || ""}</small>`;
-          historyDisplay.appendChild(div);
-        }
+async function loadHistory() {
+  const date = document.getElementById('search-date').value;
+  if(!date) return alert("날짜를 선택하세요.");
+  const morningDisplay = document.getElementById('morning-status-display');
+  const historyDisplay = document.getElementById('history-display');
+  
+  morningDisplay.innerHTML = "";
+  historyDisplay.innerText = "조회 중...";
+
+  try {
+    const resp = await fetch(`${API_URL}?date=${date}`);
+    const records = await resp.json();
+    historyDisplay.innerHTML = "";
+
+    if(records.length === 0) {
+      historyDisplay.innerText = "기록이 없습니다.";
+      return;
+    }
+
+    // 데이터를 종목별로 그룹화
+    const grouped = records.reduce((acc, curr) => {
+      if (curr.type === "아침컨디션") {
+        morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${curr.review || curr.memo || "기록 없음"}</div>`;
+      } else {
+        if (!acc[curr.type]) acc[curr.type] = [];
+        acc[curr.type].push(curr);
+      }
+      return acc;
+    }, {});
+
+    // 그룹화된 데이터를 화면에 출력
+    for (const type in grouped) {
+      const card = document.createElement('div');
+      card.className = 'history-card';
+      
+      let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
+      
+      grouped[type].forEach((r, idx) => {
+        detailHtml += `
+          <div style="margin-bottom:8px; padding-bottom:5px; ${idx < grouped[type].length - 1 ? 'border-bottom:1px dashed #eee;' : ''}">
+            <span style="color:#3498db; font-weight:bold;">${r.lapOrDist}회/차:</span> ${r.time} | 💓${r.hr}bpm | 🎒${r.weight}kg
+            ${r.memo ? `<br><small style="color:#888;">ㄴ ${r.memo}</small>` : ''}
+          </div>`;
       });
-    } catch (e) { historyDisplay.innerText = "조회 실패"; }
+      
+      card.innerHTML = detailHtml;
+      historyDisplay.appendChild(card);
+    }
+
+    if(historyDisplay.innerHTML === "" && morningDisplay.innerHTML !== "") {
+      historyDisplay.innerText = "훈련 기록은 없습니다.";
+    }
+
+  } catch (e) {
+    historyDisplay.innerText = "조회 실패: " + e.message;
   }
+}
 
   function startTimer() { if (!timerInterval) { startTime = Date.now() - elapsedTime; timerInterval = setInterval(updateTime, 100); } }
   function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
@@ -188,3 +222,4 @@
 </script>
 </body>
 </html>
+
