@@ -109,20 +109,27 @@
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   }
 
-  // 초기 로드 시 컨디션 체크 제어
-  document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("DOMContentLoaded", function() {
+    // 1. 컨디션 체크 박스 표시 제어
     if (localStorage.getItem('lastConditionCheck') === getTodayKey()) {
       document.getElementById('morning-box').style.display = 'none';
     } else {
       document.getElementById('morning-box').style.display = 'block';
     }
-  });
 
-  document.querySelectorAll('.rating input').forEach(input => {
-    input.addEventListener('change', (e) => {
-      const texts = { "1": "매우 나쁨", "2": "피로함", "3": "보통", "4": "좋음", "5": "최상" };
-      document.getElementById('condition-text').innerText = texts[e.target.value] + " (정상훈련)";
-    });
+    // 2. 날짜 선택 인풋에 오늘 날짜 기본값 넣기
+    const searchDateInput = document.getElementById('search-date');
+    if (searchDateInput) {
+      searchDateInput.value = getTodayKey();
+    }
+
+    // 3. 페이지 열리자마자 오늘 기록 자동으로 불러오기
+    // 호출 시 에러가 나더라도 메인 화면 이용에 방해되지 않도록 처리합니다.
+    try {
+      loadHistory();
+    } catch (e) {
+      console.log("초기 데이터 로딩 실패: ", e);
+    }
   });
 
   async function saveMorning() {
@@ -185,68 +192,107 @@
     }
     return timeVal;
   }
+async function loadHistory() {
+  const dateInput = document.getElementById('search-date').value;
+  if (!dateInput) return alert("날짜를 선택하세요.");
+  const morningDisplay = document.getElementById('morning-status-display');
+  const historyDisplay = document.getElementById('history-display');
+  const copyBtn = document.getElementById('btn-copy');
+  
+  morningDisplay.innerHTML = "";
+  historyDisplay.innerText = "데이터 분석 중...";
+  if (copyBtn) copyBtn.style.display = 'none';
 
-  async function loadHistory() {
-    const dateInput = document.getElementById('search-date').value;
-    if(!dateInput) return alert("날짜를 선택하세요.");
-    const morningDisplay = document.getElementById('morning-status-display');
-    const historyDisplay = document.getElementById('history-display');
-    const copyBtn = document.getElementById('btn-copy');
-    morningDisplay.innerHTML = ""; historyDisplay.innerText = "데이터 분석 중...";
-    if(copyBtn) copyBtn.style.display = 'none';
+  try {
+    const resp = await fetch(`${API_URL}?date=${dateInput}`);
+    const records = await resp.json();
+    historyDisplay.innerHTML = "";
+    
+    if (!records || records.length === 0) {
+      historyDisplay.innerText = "기록이 없습니다.";
+      return;
+    }
 
-    try {
-      const resp = await fetch(`${API_URL}?date=${dateInput}`);
-      const records = await resp.json();
-      historyDisplay.innerHTML = "";
-      if(!records || records.length === 0) { historyDisplay.innerText = "기록이 없습니다."; return; }
-      const dday = getDDay();
-      const grouped = records.reduce((acc, curr) => {
-        if (curr.type === "아침컨디션") {
-          acc.morning = curr.condition || curr.review || curr.memo || "기록 없음";
-          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${acc.morning}</div>`;
-        } else { if (!acc[curr.type]) acc[curr.type] = []; acc[curr.type].push(curr); }
-        return acc;
-      }, { morning: "기록 없음" });
-
-      // AI 피드백
-      let feedback = `<div style="padding:12px; background:#fff9db; border-radius:10px; border:1px solid #f1c40f; margin-bottom:15px; font-size:0.85rem; line-height:1.5;">`;
-      feedback += `<strong>🤖 원정 AI 리포트 (D-${dday})</strong><br><hr style="border:0; border-top:1px solid #e5c100; margin:8px 0;">`;
-      if (grouped["계단"]) {
-        const hrs = grouped["계단"].map(r => parseInt(r.hr)).filter(v => v > 0);
-        const max = hrs.length ? Math.max(...hrs) : 0;
-        feedback += max >= 165 ? `🚩 **강도 분석:** 심박수(${max}bpm)가 높습니다. 안정에 유의하세요.<br>` : `✅ **안정성:** 페이스가 좋습니다.<br>`;
-        feedback += `📈 등정 확률 88% 예상.`;
-      } else { feedback += `📍 오늘은 기술 숙련일입니다. 기초 체력 유지에 집중하세요.`; }
-      feedback += `</div>`;
-      historyDisplay.innerHTML = feedback;
-      if(copyBtn) copyBtn.style.display = 'block';
-
-      for (const type in grouped) {
-        if (type === "morning") continue;
-        const card = document.createElement('div'); card.className = 'history-card';
-        let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
-        grouped[type].forEach((r, idx) => {
-          const t = formatDuration(r.time);
-          detailHtml += `<div style="margin-bottom:8px; padding-bottom:5px; border-bottom:1px dashed #eee;">
-            <span style="color:#3498db; font-weight:bold;">${idx + 1}차 :</span> ${r.lapOrDist || "0"}${type==='계단'?'회':''} ${t?`| ⏱️${t}`:''} ${r.hr?`| 💓${r.hr}bpm`:''} ${r.weight&&r.weight!=='-'?`| 🎒${r.weight}kg`:''}
-          </div>`;
-        });
-        card.innerHTML = detailHtml; historyDisplay.appendChild(card);
+    const dday = getDDay();
+    const grouped = records.reduce((acc, curr) => {
+      if (curr.type === "아침컨디션") {
+        acc.morning = curr.condition || curr.review || curr.memo || "기록 없음";
+        morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${acc.morning}</div>`;
+      } else if (curr.type === "훈련마감") {
+        acc.finish = curr;
+      } else {
+        if (!acc[curr.type]) acc[curr.type] = [];
+        acc[curr.type].push(curr);
       }
-      currentSummaryText = `🏔️ SAT PEAK 요약 (${dateInput})\n📅 D-${dday}\n☀️ 컨디션: ${grouped.morning}\n\n`;
-      for (const type in grouped) {
-        if (type === "morning") continue;
-        currentSummaryText += `[${type}]\n`;
-        grouped[type].forEach((r, idx) => {
-          const t = formatDuration(r.time);
-          currentSummaryText += `${idx + 1}차: ${r.lapOrDist || "0"}${type==='계단'?'회':''}${t?` (${t})`:""}\n`;
-        });
-        currentSummaryText += `\n`;
-      }
-    } catch (e) { historyDisplay.innerText = "조회 실패: " + e.message; }
+      return acc;
+    }, { morning: "기록 없음", finish: null });
+
+    // 1. AI 피드백 생성
+    let feedback = `<div style="padding:12px; background:#fff9db; border-radius:10px; border:1px solid #f1c40f; margin-bottom:15px; font-size:0.85rem; line-height:1.5;">`;
+    feedback += `<strong>🤖 원정 AI 리포트 (D-${dday})</strong><br><hr style="border:0; border-top:1px solid #e5c100; margin:8px 0;">`;
+    
+    if (grouped["계단"]) {
+      const hrs = grouped["계단"].map(r => parseInt(r.hr)).filter(v => v > 0);
+      const max = hrs.length ? Math.max(...hrs) : 0;
+      feedback += max >= 165 ? `🚩 **강도 분석:** 심박수(${max}bpm)가 높습니다. 안정에 유의하세요.<br>` : `✅ **안정성:** 페이스가 좋습니다.<br>`;
+      feedback += `📈 등정 확률 88% 예상.`;
+    } else {
+      feedback += `📍 오늘은 기술 숙련일입니다. 기초 체력 유지에 집중하세요.`;
+    }
+    feedback += `</div>`;
+    historyDisplay.innerHTML = feedback;
+    if (copyBtn) copyBtn.style.display = 'block';
+
+    // 2. 카톡 공유 텍스트 초기화
+    currentSummaryText = `🏔️ SAT PEAK 요약 (${dateInput})\n📅 D-${dday}\n☀️ 컨디션: ${grouped.morning}\n\n`;
+
+    // 3. 종목별 카드 생성 및 텍스트 합치기 (루프 통합)
+    for (const type in grouped) {
+      if (type === "morning" || type === "finish") continue;
+
+      const card = document.createElement('div');
+      card.className = 'history-card';
+      let detailHtml = `<strong>[${type}]</strong><hr style="border:0; border-top:1px solid #eee; margin:5px 0;">`;
+      currentSummaryText += `[${type}]\n`;
+
+      grouped[type].forEach((r, idx) => {
+        const t = formatDuration(r.time);
+        // 화면용 HTML
+        detailHtml += `<div style="margin-bottom:8px; padding-bottom:5px; border-bottom:1px dashed #eee;">
+          <span style="color:#3498db; font-weight:bold;">${idx + 1}차 :</span> ${r.lapOrDist || "0"}${type === '계단' ? '회' : ''} ${t ? `| ⏱️${t}` : ''} ${r.hr ? `| 💓${r.hr}bpm` : ''} ${r.weight && r.weight !== '-' ? `| 🎒${r.weight}kg` : ''}
+        </div>`;
+        // 카톡용 텍스트
+        currentSummaryText += `${idx + 1}차: ${r.lapOrDist || "0"}${type === '계단' ? '회' : ''}${t ? ` (${t})` : ""}\n`;
+      });
+
+      card.innerHTML = detailHtml;
+      historyDisplay.appendChild(card);
+      currentSummaryText += `\n`;
+    }
+
+    // 4. 훈련 마감 리포트 추가
+    if (grouped.finish) {
+      const finishCard = document.createElement('div');
+      finishCard.className = 'history-card';
+      finishCard.style.background = "#fff0f0";
+      finishCard.style.borderLeft = "5px solid #e74c3c";
+      finishCard.innerHTML = `
+        <strong>🏁 훈련 마감 리포트</strong>
+        <hr style="border:0; border-top:1px solid #ffc9c9; margin:5px 0;">
+        <div style="font-size:0.9rem; line-height:1.6;">
+          ${grouped.finish.review && grouped.finish.review !== "-" ? `<strong>총평:</strong> ${grouped.finish.review}<br>` : ""}
+          ${grouped.finish.memo && grouped.finish.memo !== "-" ? `<strong>메모:</strong> ${grouped.finish.memo}` : ""}
+        </div>
+      `;
+      historyDisplay.appendChild(finishCard);
+      currentSummaryText += `🏁 [훈련 마감]\n${grouped.finish.review !== "-" ? grouped.finish.review : ""}\n${grouped.finish.memo !== "-" ? grouped.finish.memo : ""}`;
+    }
+
+  } catch (e) {
+    historyDisplay.innerText = "조회 실패: " + e.message;
   }
-
+}
+  
   function copyToClipboard() {
     if (!currentSummaryText) return;
     navigator.clipboard.writeText(currentSummaryText).then(() => alert("복사 완료!"));
