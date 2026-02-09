@@ -4,38 +4,27 @@
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <style>
-    /* 전체 화면 설정 - 안드로이드 시스템 바 고려 */
     html, body { height: 100%; margin: 0; padding: 0; background: #f4f7f6; }
     body { font-family: 'Apple SD Gothic Neo', sans-serif; display: flex; flex-direction: column; overflow: hidden; }
-    
     .header { padding: 15px; background: white; border-bottom: 1px solid #ddd; font-weight: bold; font-size: 1.1rem; text-align: center; flex-shrink: 0; }
-    
-    /* 스크롤 영역 - 하단 여백 80px 추가하여 시스템 UI에 가려지지 않게 함 */
     .content { flex: 1; overflow-y: auto; padding: 12px 12px 80px 12px; box-sizing: border-box; -webkit-overflow-scrolling: touch; }
-    
     .card { background: white; padding: 12px; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     #timer { font-size: 3rem; font-weight: bold; margin: 5px 0; color: #333; text-align: center; font-variant-numeric: tabular-nums; }
-    
     .rating { display: flex; justify-content: center; flex-direction: row-reverse; gap: 8px; margin: 5px 0; }
     .rating input { display: none; }
     .rating label { font-size: 2rem; color: #ddd; cursor: pointer; }
     .rating input:checked ~ label { color: #f1c40f; }
-
-    button { padding: 14px; font-size: 1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; width: 100%; margin: 4px 0; transition: 0.2s; -webkit-tap-highlight-color: transparent; }
+    button { padding: 14px; font-size: 1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; width: 100%; margin: 4px 0; transition: 0.2s; }
     .btn-blue { background: #3498db; color: white; }
     .btn-green { background: #2ecc71; color: white; }
     .btn-red { background: #e74c3c; color: white; }
     .btn-purple { background: #9b59b6; color: white; }
     .btn-gray { background: #95a5a6; color: white; }
-    
     input, select, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
     .label { text-align: left; font-size: 0.8rem; color: #666; font-weight: bold; margin-top: 5px; }
-
-   /* 조회 레이어 및 특수 카드 */
     #history-layer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #f4f7f6; z-index: 100; overflow-y: auto; padding: 15px 15px 100px 15px; box-sizing: border-box; }
     .morning-status-card { background: #e8f4fd; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #3498db; text-align: center; }
     .history-card { background: white; padding: 12px; border-radius: 10px; margin-bottom: 8px; text-align: left; border-left: 5px solid #3498db; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    
   </style>
 </head>
 <body>
@@ -43,7 +32,7 @@
 <div class="header">🏔️ SAT PEAK 원정 훈련 일지</div>
 
 <div class="content">
-  <div id="morning-box" class="card" style="background: #e8f4fd;">
+  <div id="morning-box" class="card" style="background: #e8f4fd; display: none;">
     <div class="label">☀️ 기상 후 컨디션 체크</div>
     <div class="rating">
       <input type="radio" name="star" id="star5" value="5"><label for="star5">★</label>
@@ -53,7 +42,7 @@
       <input type="radio" name="star" id="star1" value="1"><label for="star1">★</label>
     </div>
     <div id="condition-text" style="font-size: 0.8rem; color: #666; margin-bottom: 8px; text-align: center;">보통 (정상훈련)</div>
-    <button id="btn-morning" class="btn-blue" onclick="saveMorning()">컨디션 저장 및 섹션 숨기기</button>
+    <button id="btn-morning" class="btn-blue" onclick="saveMorning()">컨디션 저장 및 오늘 숨기기</button>
   </div>
 
   <div class="card">
@@ -96,17 +85,18 @@
   </div>
   <input type="date" id="search-date">
   <button id="btn-load" class="btn-purple" onclick="loadHistory()">기록 불러오기</button>
-  <div id="history-display" style="margin-top:15px;"></div>
+  
+  <div id="morning-status-display" style="margin-top:15px;"></div>
+  <div id="history-display"></div>
 </div>
 
 <script>
   const API_URL = "https://script.google.com/macros/s/AKfycbyRn4Ay2nVXWapUUXMYv5rqv0d81-gEcHlHZPYRhVOcfxsdlmgECOIMSRTjXUlv2vJ5RA/exec";
   let startTime, timerInterval, elapsedTime = 0;
-// 접속 시 오늘 날짜 확인하여 컨디션 체크창 노출 여부 결정
+
   window.onload = function() {
     const lastCheckDate = localStorage.getItem('lastConditionCheck');
     const today = new Date().toISOString().split('T')[0];
-    
     if (lastCheckDate !== today) {
       document.getElementById('morning-box').style.display = 'block';
     }
@@ -119,98 +109,56 @@
     });
   });
 
-  // 종목 선택 시 UI 가이드 자동 전환
   document.getElementById('type').addEventListener('change', function() {
     const type = this.value;
     const label = document.getElementById('dynamic-label');
     const paceInput = document.getElementById('pace');
     const weightInput = document.getElementById('weight');
     const lapInput = document.getElementById('lapOrDist');
-
-    lapInput.type = "number";
-    paceInput.style.display = 'none';
-    weightInput.style.display = 'block';
-
-    if (type === '계단') {
-      label.innerText = "회차 / 최대심박수 / 중량(kg)";
-      lapInput.placeholder = "회차";
-    } else if (type === '중량하이킹') {
-      label.innerText = "거리(km) / 최대심박수 / 중량(kg)";
-      lapInput.placeholder = "km";
-    } else if (type === '턱걸이' || type === '스쿼트' || type === '바일휘두르기') {
-      label.innerText = "횟수 / 최대심박수 / 추가중량(kg)";
-      lapInput.placeholder = "횟수";
-    } else if (type === '러닝') {
-      label.innerText = "거리(km) / 최대심박수";
-      lapInput.placeholder = "km";
-      paceInput.style.display = 'block';
-      weightInput.style.display = 'none';
-    } else if (type === '등반') {
-      label.innerText = "내용 / 최대심박 / 기온(℃)";
-      lapInput.type = "text";
-      paceInput.style.display = 'block';
-    }
+    lapInput.type = "number"; paceInput.style.display = 'none'; weightInput.style.display = 'block';
+    if (type === '계단') { label.innerText = "회차 / 최대심박수 / 중량(kg)"; lapInput.placeholder = "회차"; }
+    else if (type === '중량하이킹') { label.innerText = "거리(km) / 최대심박수 / 중량(kg)"; lapInput.placeholder = "km"; }
+    else if (type === '턱걸이' || type === '스쿼트' || type === '바일휘두르기') { label.innerText = "횟수 / 최대심박수 / 추가중량(kg)"; lapInput.placeholder = "횟수"; }
+    else if (type === '러닝') { label.innerText = "거리(km) / 최대심박수"; lapInput.placeholder = "km"; paceInput.style.display = 'block'; weightInput.style.display = 'none'; }
+    else if (type === '등반') { label.innerText = "내용 / 최대심박 / 기온(℃)"; lapInput.type = "text"; paceInput.style.display = 'block'; }
   });
 
   function openHistory() { document.getElementById('history-layer').style.display = 'block'; }
   function closeHistory() { document.getElementById('history-layer').style.display = 'none'; }
-
-  function resetTimer() {
-    stopTimer();
-    elapsedTime = 0;
-    document.getElementById("timer").innerText = "00:00:00";
-  }
+  function resetTimer() { stopTimer(); elapsedTime = 0; document.getElementById("timer").innerText = "00:00:00"; }
 
   async function saveMorning() {
     const star = document.querySelector('input[name="star"]:checked').value;
     const text = document.getElementById('condition-text').innerText;
+    const today = new Date().toISOString().split('T')[0]; // 변수 정의 추가
     const btn = document.getElementById('btn-morning');
     btn.disabled = true;
-    
-try {
+    try {
       await fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ type: "아침컨디션", condition: star + "점 (" + text + ")" })});
-      
-      // 로컬 스토리지에 오늘 날짜 저장
       localStorage.setItem('lastConditionCheck', today);
       document.getElementById('morning-box').style.display = 'none';
       alert("오늘 컨디션 저장 완료!");
-    } catch (e) { alert("오류 발생"); }
+    } catch (e) { alert("오류 발생"); btn.disabled = false; }
   }
+
   async function saveSession() {
     const type = document.getElementById('type').value;
     const lapInput = document.getElementById('lapOrDist');
     const hrInput = document.getElementById('hr');
     const weightInput = document.getElementById('weight');
     const btn = document.getElementById('btn-session');
-
-    const data = {
-      type: type,
-      time: document.getElementById('timer').innerText,
-      lapOrDist: lapInput.value,
-      hr: hrInput.value,
-      weight: weightInput.value || "-",
-      pace: document.getElementById('pace').value || "-",
-      memo: document.getElementById('memo').value
-    };
-
+    const data = { type: type, time: document.getElementById('timer').innerText, lapOrDist: lapInput.value, hr: hrInput.value, weight: weightInput.value || "-", pace: document.getElementById('pace').value || "-", memo: document.getElementById('memo').value };
     btn.disabled = true;
     try {
       await fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify(data)});
       alert("기록 완료!");
-      
-      resetTimer(); // 타이머 초기화
-      hrInput.value = ""; // 심박수 초기화
-      
-      if (type === "계단") {
-        lapInput.value = parseInt(lapInput.value) + 1; // 회차 +1
-      } else {
-        lapInput.value = "1"; // 초기화
-        weightInput.value = ""; 
-      }
-    } catch (e) { alert("저장 중 오류 발생"); } finally { btn.disabled = false; }
+      resetTimer(); hrInput.value = "";
+      if (type === "계단") lapInput.value = parseInt(lapInput.value) + 1;
+      else { lapInput.value = "1"; weightInput.value = ""; }
+    } catch (e) { alert("저장 실패"); } finally { btn.disabled = false; }
   }
 
- async function loadHistory() {
+  async function loadHistory() {
     const date = document.getElementById('search-date').value;
     if(!date) return alert("날짜를 선택하세요.");
     const morningDisplay = document.getElementById('morning-status-display');
@@ -221,10 +169,9 @@ try {
       const records = await resp.json();
       historyDisplay.innerHTML = "";
       if(records.length === 0) { historyDisplay.innerText = "기록이 없습니다."; return; }
-      
       records.forEach(r => {
         if(r.type === "아침컨디션") {
-          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${r.review || r.memo || "상태 기록 없음"}</div>`;
+          morningDisplay.innerHTML = `<div class="morning-status-card"><strong>☀️ 기상 컨디션</strong><br>${r.review || r.memo || "기록 없음"}</div>`;
         } else {
           const div = document.createElement('div');
           div.className = 'history-card';
@@ -232,7 +179,6 @@ try {
           historyDisplay.appendChild(div);
         }
       });
-      if(historyDisplay.innerHTML === "" && morningDisplay.innerHTML !== "") historyDisplay.innerText = "훈련 기록은 없습니다.";
     } catch (e) { historyDisplay.innerText = "조회 실패"; }
   }
 
@@ -242,5 +188,3 @@ try {
 </script>
 </body>
 </html>
-
-
