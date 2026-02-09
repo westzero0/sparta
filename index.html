@@ -102,12 +102,20 @@
 <script>
   const API_URL = "https://script.google.com/macros/s/AKfycbyRn4Ay2nVXWapUUXMYv5rqv0d81-gEcHlHZPYRhVOcfxsdlmgECOIMSRTjXUlv2vJ5RA/exec";
   let startTime, timerInterval, elapsedTime = 0;
+// 접속 시 오늘 날짜 확인하여 컨디션 체크창 노출 여부 결정
+  window.onload = function() {
+    const lastCheckDate = localStorage.getItem('lastConditionCheck');
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (lastCheckDate !== today) {
+      document.getElementById('morning-box').style.display = 'block';
+    }
+  };
 
-  // 컨디션 텍스트 업데이트
   document.querySelectorAll('.rating input').forEach(input => {
     input.addEventListener('change', (e) => {
-      const texts = { "1": "매우 나쁨 (휴식)", "2": "피로함 (저강도)", "3": "보통 (정상훈련)", "4": "좋음 (강도높임)", "5": "최상 (완벽)" };
-      document.getElementById('condition-text').innerText = texts[e.target.value];
+      const texts = { "1": "매우 나쁨", "2": "피로함", "3": "보통", "4": "좋음", "5": "최상" };
+      document.getElementById('condition-text').innerText = texts[e.target.value] + " (정상훈련)";
     });
   });
 
@@ -159,13 +167,15 @@
     const btn = document.getElementById('btn-morning');
     btn.disabled = true;
     
-    try {
+try {
       await fetch(API_URL, { method: "POST", mode: "no-cors", body: JSON.stringify({ type: "아침컨디션", condition: star + "점 (" + text + ")" })});
+      
+      // 로컬 스토리지에 오늘 날짜 저장
+      localStorage.setItem('lastConditionCheck', today);
       document.getElementById('morning-box').style.display = 'none';
-      alert("컨디션 저장 완료!");
-    } catch (e) { alert("오류: " + e.message); btn.disabled = false; }
+      alert("오늘 컨디션 저장 완료!");
+    } catch (e) { alert("오류 발생"); }
   }
-
   async function saveSession() {
     const type = document.getElementById('type').value;
     const lapInput = document.getElementById('lapOrDist');
@@ -232,4 +242,5 @@
 </script>
 </body>
 </html>
+
 
